@@ -1,29 +1,72 @@
-    // create an SVG element inside the #graph div that fills 100% of the div
-		var graph = d3.select("#graph").append("svg:svg").attr("width", "100%").attr("height", "100%");
+var margin = {top: 8, right: 10, bottom: 2, left: 10},
+    width = 960 - margin.left - margin.right,
+    height = 69 - margin.top - margin.bottom;
 
-		// create a simple data array that we'll plot with a line (this array represents only the Y values, X will just be the index location)
-		var data = [3, 6, 2, 7, 5, 2, 1, 3, 8, 9, 2, 5, 9, 3, 6, 3, 6, 2, 7, 5, 2, 1, 3, 8, 9, 2, 5, 9, 2, 7, 5, 2, 1, 3, 8, 9, 2, 5, 9, 3, 6, 2, 7, 5, 2, 1, 3, 8, 9, 2, 5, 9];
+var parseDate = d3.time.format("%b %Y").parse;
 
-		// X scale will fit values from 0-10 within pixels 0-100
-		var x = d3.scale.linear().domain([0, 10]).range([0, 50]);
-		// Y scale will fit values from 0-10 within pixels 0-100
-		var y = d3.scale.linear().domain([0, 10]).range([0, 30]);
+var x = d3.time.scale()
+    .range([0, width]);
 
-		// create a line object that represents the SVN line we're creating
-		var line = d3.svg.line()
-			// assign the X function to plot our line as we wish
-			.x(function(d,i) { 
-				// verbose logging to show what's actually being done
-				console.log('Plotting X value for data point: ' + d + ' using index: ' + i + ' to be at: ' + x(i) + ' using our xScale.');
-				// return the X coordinate where we want to plot this datapoint
-				return x(i); 
-			})
-			.y(function(d) { 
-				// verbose logging to show what's actually being done
-				console.log('Plotting Y value for data point: ' + d + ' to be at: ' + y(d) + " using our yScale.");
-				// return the Y coordinate where we want to plot this datapoint
-				return y(d); 
-			})
-	
-			// display the line by appending an svg:path element with the data line we created above
-			graph.append("svg:path").attr("d", line(data));
+var y = d3.scale.linear()
+    .range([height, 0]);
+
+var area = d3.svg.area()
+    .x(function(d) { return x(d.date); })
+    .y0(height)
+    .y1(function(d) { return y(d.price); });
+
+var line = d3.svg.line()
+    .x(function(d) { return x(d.date); })
+    .y(function(d) { return y(d.price); });
+
+d3.csv("./stocks.csv", type, function(error, data) {
+
+  // Nest data by symbol.
+  var symbols = d3.nest()
+      .key(function(d) { return d.symbol; })
+      .entries(data);
+
+  // Compute the maximum price per symbol, needed for the y-domain.
+  symbols.forEach(function(s) {
+    s.maxPrice = d3.max(s.values, function(d) { return d.price; });
+  });
+
+  // Compute the minimum and maximum date across symbols.
+  // We assume values are sorted by date.
+  x.domain([
+    d3.min(symbols, function(s) { return s.values[0].date; }),
+    d3.max(symbols, function(s) { return s.values[s.values.length - 1].date; })
+  ]);
+
+  // Add an SVG element for each symbol, with the desired dimensions and margin.
+  var svg = d3.select("main").selectAll("svg")
+      .data(symbols)
+    .enter().append("svg")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom)
+    .append("g")
+      .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+  // Add the area path elements. Note: the y-domain is set per element.
+  svg.append("path")
+      .attr("class", "area")
+      .attr("d", function(d) { y.domain([0, d.maxPrice]); return area(d.values); });
+
+  // Add the line path elements. Note: the y-domain is set per element.
+  svg.append("path")
+      .attr("class", "line")
+      .attr("d", function(d) { y.domain([0, d.maxPrice]); return line(d.values); });
+
+  // Add a small label for the symbol name.
+  svg.append("text")
+      .attr("x", width - 6)
+      .attr("y", height - 6)
+      .style("text-anchor", "end")
+      .text(function(d) { return d.key; });
+});
+
+function type(d) {
+  d.price = +d.price;
+  d.date = parseDate(d.date);
+  return d;
+}
